@@ -6,7 +6,7 @@ if (!defined('BASEPATH'))
 /**
  * LinkedIn OAuth2 Provider
  * https://developer.linkedin.com/documents/authentication
- * 
+ *
  * @package    CodeIgniter/OAuth2
  * @category   Provider
  * @author     Benjamin Hill
@@ -21,14 +21,13 @@ class OAuth2_Provider_Linkedin extends OAuth2_Provider {
   public function __construct(array $options = array()) {
     if (empty($options['scope'])) {
       $options['scope'] = array(
-          'r_basicprofile',
+          'r_liteprofile',
           'r_emailaddress'
       );
     }
 
     // Array it if its string
     $options['scope'] = (array) $options['scope'];
-
     parent::__construct($options);
   }
 
@@ -42,29 +41,34 @@ class OAuth2_Provider_Linkedin extends OAuth2_Provider {
 
   public function get_user_info(OAuth2_Token_Access $token) {
 
-    $url_profile = 'https://api.linkedin.com/v1/people/~?format=json&' . http_build_query(array(
-                'oauth2_access_token' => $token->access_token,
-    ));
-    $user = json_decode(file_get_contents($url_profile), true);
+    $url_profile = 'https://api.linkedin.com/v2/me?' . http_build_query([
+      'oauth2_access_token' => $token->access_token,
+    ]);
+    $user_data = json_decode(file_get_contents($url_profile), true);
 
-    $url_email = 'https://api.linkedin.com/v1/people/~/email-address?format=json&' . http_build_query(array(
-                'oauth2_access_token' => $token->access_token,
-    ));
-    $user_email = json_decode(file_get_contents($url_email), true);
+    $url_email = 'https://api.linkedin.com/v2/emailAddress?q=members&projection=(elements*(handle~))&' . http_build_query([
+      'oauth2_access_token' => $token->access_token,
+    ]);
+    $user_email_data = json_decode(file_get_contents($url_email), true);
 
-    $args = array();
-    parse_str(parse_url($user['siteStandardProfileRequest']['url'], PHP_URL_QUERY), $args);
-    $user_id = $args['id'];
-    return array(
-        'id' => $user_id,
-        'first_name' => $user['firstName'],
-        'last_name' => $user['lastName'],
-        'name' => $user['firstName'] . ' ' . $user['lastName'],
-        'description' => $user['headline'],
-        'email' => $user_email,
-        'urls' => array(
-            'LinkedIn' => $user['siteStandardProfileRequest']['url']
-        ),
-    );
+    $user_id = @$user_data['id'];
+
+    /* User Info */
+    $firstName = @$user_data['firstName'];
+    $lastName = @$user_data['lastName'];
+    $preferred_locale = @$firstName['preferredLocale'];
+    $str_preferred_locale = @$preferred_locale['language'] . '_' . @$preferred_locale['country'];
+    $first_name = $firstName['localized'][$str_preferred_locale];
+    $last_name = $lastName['localized'][$str_preferred_locale];
+
+    $str_user_email = @$user_email_data['elements'][0]['handle~']['emailAddress'];
+
+    return [
+      'id' => $user_id,
+      'first_name' => $first_name,
+      'last_name' => $last_name,
+      'name' => $first_name . ' ' . $last_name,
+      'email' => $str_user_email,
+    ];
   }
 }
